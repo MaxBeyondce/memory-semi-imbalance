@@ -1,0 +1,1647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Does Memory Semi Meet Balance?</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+/* ===== RESET & BASE ===== */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f5f6fa;--card:rgba(255,255,255,0.65);--card-border:rgba(255,255,255,0.45);
+  --blur:20px;--radius:18px;--shadow:0 8px 32px rgba(0,0,0,0.07);
+  --navy:#1e3a5f;--purple:#7c3aed;--blue:#2563eb;--green:#059669;--amber:#d97706;
+  --red:#dc2626;--gray:#6b7280;--teal:#0d9488;
+  --surplus:rgba(5,150,105,0.13);--shortage:rgba(220,38,38,0.13);
+  --font:'Segoe UI','Inter',system-ui,sans-serif;
+}
+body{font-family:var(--font);background:var(--bg);color:#1e293b;line-height:1.5;padding:0}
+
+/* ===== GLASSMORPHISM ===== */
+.glass{
+  background:var(--card);backdrop-filter:blur(var(--blur));-webkit-backdrop-filter:blur(var(--blur));
+  border:1px solid var(--card-border);border-radius:var(--radius);box-shadow:var(--shadow);
+}
+
+/* ===== LAYOUT ===== */
+.main-layout{min-height:100vh}
+.main-content{padding-bottom:40px}
+.container{max-width:1320px;margin:0 auto;padding:0 20px}
+section{margin-bottom:32px}
+
+/* ===== HEADER ===== */
+.header{
+  background:linear-gradient(135deg,#1e3a5f 0%,#2563eb 100%);
+  color:#fff;padding:40px 0 0;text-align:center;
+  position:sticky;top:0;z-index:100;transition:padding .3s ease;
+}
+.header.compact{padding:12px 0 0}
+.header h1{font-size:clamp(1.4rem,3vw,2.2rem);font-weight:700;letter-spacing:-0.5px;transition:font-size .3s ease}
+.header.compact h1{font-size:clamp(0.95rem,2vw,1.3rem)}
+.header p{font-size:0.85rem;opacity:0.75;margin-top:6px;transition:all .3s ease;overflow:hidden;max-height:2em}
+.header.compact p{opacity:0;max-height:0;margin-top:0}
+.panel-toggle-btn{
+  position:absolute;top:50%;right:0;transform:translateY(-50%);
+  background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);
+  border-radius:10px;padding:8px 12px;cursor:pointer;
+  color:#fff;transition:background .2s;display:flex;align-items:center;gap:6px;
+  font-size:0.75rem;font-weight:600;white-space:nowrap;
+}
+.panel-toggle-btn:hover{background:rgba(255,255,255,0.25)}
+.panel-toggle-btn.active{background:rgba(255,255,255,0.28);border-color:rgba(255,255,255,0.6)}
+
+/* ===== VERDICT GRID ===== */
+.verdict-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:-8px;position:relative;z-index:2;
+}
+@media(max-width:900px){.verdict-grid{grid-template-columns:1fr}}
+.verdict-card{padding:24px;position:relative;overflow:hidden}
+.verdict-card .tag{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;
+  padding:4px 12px;border-radius:20px;margin-bottom:10px;
+}
+.tag.surplus{background:var(--surplus);color:#047857}
+.tag.shortage{background:var(--shortage);color:#b91c1c}
+.tag.neutral{background:rgba(217,119,6,0.12);color:#92400e}
+.verdict-card h3{font-size:1.05rem;font-weight:700;margin-bottom:2px}
+.verdict-card .metric{font-size:0.78rem;color:var(--gray)}
+.verdict-card .metric b{color:#1e293b}
+.metric-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
+.chart-wrap{position:relative;height:220px}
+.unit-toggle{
+  display:flex;gap:0;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;
+  font-size:0.65rem;flex-shrink:0;
+}
+.unit-toggle button{
+  padding:3px 8px;border:none;background:#fff;cursor:pointer;color:var(--gray);font-weight:600;
+  transition:all .15s;
+}
+.unit-toggle button.active{background:var(--navy);color:#fff}
+
+/* ===== SIGNAL DOT ===== */
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:4px}
+.dot.green{background:#10b981}.dot.red{background:#ef4444}.dot.yellow{background:#f59e0b}
+
+/* ===== UTILITY ===== */
+.text-xs{font-size:0.72rem}.text-sm{font-size:0.8rem}.text-muted{color:var(--gray)}
+.mt-1{margin-top:8px}.mt-2{margin-top:16px}.mb-1{margin-bottom:16px}.mb-2{margin-bottom:20px}
+.flex{display:flex}.items-center{align-items:center}.gap-1{gap:16px}.gap-2{gap:16px}
+.justify-between{justify-content:space-between}
+/* Util rate row inside verdict cards */
+
+/* ===== SECTION 3 & 4: COMPOSITION ===== */
+.section-title{font-size:1.15rem;font-weight:700;color:var(--navy);margin-top:16px;margin-bottom:16px}
+.seg-toggle{display:flex;gap:0;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;width:fit-content;margin-top:20px;margin-bottom:20px}
+.seg-toggle button{
+  padding:4px 14px;border:none;background:#fff;cursor:pointer;
+  font-size:0.72rem;font-weight:600;color:var(--gray);transition:all .15s;white-space:nowrap;
+}
+.seg-toggle button.active{background:var(--navy);color:#fff}
+.comp-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media(max-width:900px){.comp-grid{grid-template-columns:1fr}}
+.comp-card{padding:24px}
+.comp-card h4{font-size:0.88rem;font-weight:700;color:#1e293b;margin-bottom:12px}
+.chart-wrap-lg{position:relative;height:300px}
+@media(max-width:768px){
+  .chart-wrap{height:160px}
+  .chart-wrap-lg{height:220px}
+}
+@media(max-width:480px){
+  .chart-wrap{height:130px}
+  .chart-wrap-lg{height:180px}
+}
+
+/* ===== DEVICE STRIP (inside sticky header) ===== */
+.device-strip{
+  background:rgba(0,0,0,0.18);border-top:1px solid rgba(255,255,255,0.08);
+  padding:10px 0;transition:padding .3s ease;position:relative;
+}
+.header.compact .device-strip{padding:5px 0}
+.strip-scroll-btn{
+  position:absolute;top:50%;transform:translateY(-50%);z-index:10;
+  background:rgba(255,255,255,0.15);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,0.35);border-radius:50%;
+  width:30px;height:30px;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;color:#fff;font-size:1.3rem;line-height:1;
+  transition:background .15s;padding:0;flex-shrink:0;
+}
+.strip-scroll-btn:hover{background:rgba(255,255,255,0.30)}
+.strip-scroll-left{left:6px}
+.strip-scroll-right{right:6px}
+.device-strip-inner{
+  max-width:none;margin:0;padding:0 44px;
+  display:flex;gap:10px;
+  overflow-x:auto;align-items:center;
+  scrollbar-width:none;-ms-overflow-style:none;
+}
+.device-strip-inner::-webkit-scrollbar{display:none}
+.dsc{
+  flex:1 1 130px;min-width:130px;
+  display:flex;align-items:center;gap:10px;
+  padding:8px 12px;border-radius:10px;
+  background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.18);
+  cursor:pointer;transition:background .15s;color:#fff;user-select:none;
+}
+.dsc:hover{background:rgba(255,255,255,0.2)}
+.dsc.active{background:rgba(255,255,255,0.28);border-color:rgba(255,255,255,0.55)}
+@media(max-width:600px){.dsc{flex:1 1 110px;min-width:110px;padding:6px 8px;gap:6px}}
+.ds-icon{font-size:1.2rem;flex-shrink:0;display:flex;align-items:center}
+.ds-info{min-width:0}
+.ds-name{font-size:0.68rem;font-weight:700;opacity:0.82;white-space:nowrap}
+.ds-shortname{display:none;font-size:0.62rem;font-weight:700;opacity:0.82;white-space:nowrap}
+.ds-ship{font-size:0.95rem;font-weight:800;line-height:1.2}
+.ds-yoy{font-size:0.63rem;font-weight:600}
+.ds-yoy.up{color:#6ee7b7}.ds-yoy.down{color:#fca5a5}
+@media(max-width:600px){.ds-ship{display:none}}
+@media(max-width:480px){
+  .ds-name{display:none}
+  .ds-shortname{display:block}
+  .dsc{flex:1 1 90px;min-width:90px;padding:5px 6px;gap:5px}
+  .ds-icon{font-size:1.05rem}
+}
+
+/* ===== FLOATING DEVICE PANEL ===== */
+.dp-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,0.22);
+  z-index:190;display:none;
+}
+.dp-overlay.open{display:block}
+.device-panel{
+  position:fixed;top:0;right:0;bottom:0;width:300px;
+  background:#fff;box-shadow:-6px 0 30px rgba(0,0,0,0.13);
+  z-index:200;padding:24px 20px;overflow-y:auto;
+  transform:translateX(100%);transition:transform .25s ease;
+  border-left:1px solid #e2e8f0;
+}
+.device-panel.open{transform:translateX(0)}
+.dp-header{
+  display:flex;align-items:flex-start;justify-content:space-between;
+  margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid var(--blue);
+}
+.dp-header h3{font-size:0.95rem;font-weight:700;color:var(--navy);margin-top:4px}
+.dp-icon{font-size:1.4rem;margin-bottom:2px;display:flex;align-items:center;height:28px}
+.dp-close{
+  background:none;border:none;cursor:pointer;font-size:1.1rem;
+  color:var(--gray);padding:4px 6px;border-radius:6px;transition:background .15s;
+}
+.dp-close:hover{background:#f1f5f9}
+.dp-summary{
+  margin-top:16px;padding:12px;background:#f8fafc;border-radius:10px;
+  font-size:0.75rem;color:var(--gray);line-height:1.8;
+}
+.dp-summary b{color:#1e293b}
+
+/* ===== SHARED CONTROL STYLES ===== */
+.ctrl-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.ctrl-row label{font-size:0.75rem;font-weight:600;color:#374151;min-width:52px}
+.ctrl-row input[type="range"]{flex:1;accent-color:var(--blue);height:4px}
+.ctrl-row .ctrl-val{
+  font-size:0.72rem;font-weight:700;color:var(--navy);
+  min-width:44px;text-align:right;font-variant-numeric:tabular-nums;
+}
+.ctrl-section-label{
+  font-size:0.7rem;font-weight:700;letter-spacing:0.3px;text-transform:uppercase;
+  color:var(--blue);border-bottom:1px solid #e2e8f0;
+  padding:8px 0 4px;margin-bottom:4px;margin-top:4px;
+}
+.ctrl-btn{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:8px 16px;border:1px solid #e2e8f0;border-radius:8px;
+  background:#fff;cursor:pointer;font-size:0.75rem;font-weight:600;color:var(--navy);
+  transition:all .15s;
+}
+.ctrl-btn:hover{background:var(--navy);color:#fff}
+.ctrl-scenario-row{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+
+<div class="main-layout">
+<div class="main-content">
+
+<!-- ===== SECTION 1: HEADER ===== -->
+<header class="header">
+  <div class="container">
+    <h1>Does Memory Semi Meet Balance?</h1>
+  </div>
+  <div class="device-strip">
+    <button class="strip-scroll-btn strip-scroll-left" onclick="scrollStrip(-1)" aria-label="scroll left">&#8249;</button>
+    <div class="device-strip-inner" id="deviceStripInner"></div>
+    <button class="strip-scroll-btn strip-scroll-right" onclick="scrollStrip(1)" aria-label="scroll right">&#8250;</button>
+  </div>
+</header>
+
+<!-- ===== SECTION 2: SHORTAGE VERDICT ===== -->
+<section class="container">
+  <div class="verdict-grid" id="verdictGrid">
+    <div class="glass verdict-card" id="card-hbm">
+      <div class="tag neutral" id="tag-hbm"><span class="dot yellow"></span>&mdash;</div>
+      <h3>HBM</h3>
+      <div class="metric-row">
+        <div class="metric" id="metric-hbm">Loading&hellip;</div>
+        <div class="unit-toggle" id="toggle-hbm">
+          <button class="active" data-unit="bit" onclick="switchUnit('hbm','bit')">M 1Gb</button>
+          <button data-unit="kwpm" onclick="switchUnit('hbm','kwpm')">kwpm</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="chart-hbm"></canvas></div>
+    </div>
+    <div class="glass verdict-card" id="card-dram">
+      <div class="tag neutral" id="tag-dram"><span class="dot yellow"></span>&mdash;</div>
+      <h3>DRAM (ex-HBM)</h3>
+      <div class="metric-row">
+        <div class="metric" id="metric-dram">Loading&hellip;</div>
+        <div class="unit-toggle" id="toggle-dram">
+          <button class="active" data-unit="bit" onclick="switchUnit('dram','bit')">M 1Gb</button>
+          <button data-unit="kwpm" onclick="switchUnit('dram','kwpm')">kwpm</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="chart-dram"></canvas></div>
+    </div>
+    <div class="glass verdict-card" id="card-nand">
+      <div class="tag neutral" id="tag-nand"><span class="dot yellow"></span>&mdash;</div>
+      <h3>NAND</h3>
+      <div class="metric-row">
+        <div class="metric" id="metric-nand">Loading&hellip;</div>
+        <div class="unit-toggle" id="toggle-nand">
+          <button class="active" data-unit="bit" onclick="switchUnit('nand','bit')">mn 1Tb</button>
+          <button data-unit="kwpm" onclick="switchUnit('nand','kwpm')">kwpm</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="chart-nand"></canvas></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== SECTION 3: DEMAND & SUPPLY COMPOSITION (Absolute Stacked Bars) ===== -->
+<section class="container" id="section3-wrap">
+  <div class="flex items-center justify-between mb-2">
+    <h2 class="section-title">Composition</h2>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+      <div class="unit-toggle" id="unit3-toggle">
+        <button class="active" data-unit="bit" onclick="switchUnit3('bit')">bit</button>
+        <button data-unit="kwpm" onclick="switchUnit3('kwpm')">kwpm</button>
+      </div>
+      <div class="seg-toggle" id="seg3-toggle">
+        <button data-seg="hbm" onclick="switchSeg3('hbm')">GPU/AI Accel (HBM)</button>
+        <button class="active" data-seg="dram" onclick="switchSeg3('dram')">DRAM(ex-HBM)</button>
+        <button data-seg="dram_total" onclick="switchSeg3('dram_total')">Total DRAM</button>
+        <button data-seg="nand" onclick="switchSeg3('nand')">NAND</button>
+      </div>
+    </div>
+  </div>
+  <div class="comp-grid">
+    <div class="glass comp-card">
+      <h4>Demand by End-Use</h4>
+      <div class="chart-wrap-lg"><canvas id="chart-dem-comp"></canvas></div>
+    </div>
+    <div class="glass comp-card">
+      <h4>Supply by Supplier</h4>
+      <div class="chart-wrap-lg"><canvas id="chart-sup-comp"></canvas></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== SECTION 4: 100% PERCENTAGE STACKED BARS ===== -->
+<section class="container" id="section4-wrap">
+  <div class="flex items-center justify-between mb-2">
+    <h2 class="section-title">Mix(%)</h2>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+      <div class="unit-toggle" id="unit4-toggle">
+        <button class="active" data-unit="bit" onclick="switchUnit4('bit')">bit</button>
+        <button data-unit="kwpm" onclick="switchUnit4('kwpm')">kwpm</button>
+      </div>
+      <div class="seg-toggle" id="seg4-toggle">
+        <button data-seg="hbm" onclick="switchSeg4('hbm')">GPU/AI Accel (HBM)</button>
+        <button class="active" data-seg="dram" onclick="switchSeg4('dram')">DRAM(ex-HBM)</button>
+        <button data-seg="dram_total" onclick="switchSeg4('dram_total')">Total DRAM</button>
+        <button data-seg="nand" onclick="switchSeg4('nand')">NAND</button>
+      </div>
+    </div>
+  </div>
+  <div class="comp-grid">
+    <div class="glass comp-card">
+      <h4>Demand Mix (%)</h4>
+      <div class="chart-wrap-lg"><canvas id="chart-dem-pct"></canvas></div>
+    </div>
+    <div class="glass comp-card">
+      <h4>Supply Mix (%)</h4>
+      <div class="chart-wrap-lg"><canvas id="chart-sup-pct"></canvas></div>
+    </div>
+  </div>
+</section>
+
+</div><!-- end main-content -->
+</div><!-- end main-layout -->
+
+<!-- ===== FLOATING DEVICE PANEL ===== -->
+<div class="dp-overlay" id="dpOverlay" onclick="closeDevicePanel()"></div>
+<div class="device-panel" id="devicePanel">
+  <div class="dp-header">
+    <div>
+      <div class="dp-icon" id="dpIcon"></div>
+      <h3 id="dpTitle">Device Controls</h3>
+    </div>
+    <button class="dp-close" onclick="closeDevicePanel()">&#10005;</button>
+  </div>
+  <div class="ctrl-scenario-row" id="dpPresets">
+    <button class="ctrl-btn" onclick="applyDevicePreset('bull')">Bull</button>
+    <button class="ctrl-btn" onclick="applyDevicePreset('bear')">Bear</button>
+    <button class="ctrl-btn" onclick="applyDevicePreset('tariff')">Tariff</button>
+  </div>
+  <div id="dpSliders"></div>
+  <div style="margin-top:12px">
+    <button class="ctrl-btn" onclick="applyDevicePreset('base')" style="width:100%;justify-content:center">Reset Device</button>
+  </div>
+  <div class="dp-summary" id="dpSummary"></div>
+</div>
+
+<script>
+/* ================================================================
+   DATA ENGINE — All values from Memory_Supply-Demand_V3.xlsx
+   ================================================================ */
+const YEARS = ['2022','2023','2024','2025','2026f','2027f','2028f'];
+const FYEARS = ['2026f','2027f','2028f'];
+
+// ---- Base-year shipments (2025 Median, K units) ----
+const BASE_2025 = { NB:200807.3095, DT:72529.199, Tablet:148631.638, SP:1099542.706 };
+
+// ---- Default growth rates (%) ----
+const DEFAULT_GR = {
+  NB:  { Upper:[-3.0, 1.57, 1.97],  Lower:[-14.8, -2.9, 2.0] },
+  DT:  { Upper:[-2.0, 2.0, 1.0],    Lower:[-9.0, -2.5, 1.0] },
+  Tablet:{ Upper:[2.5, 2.0, 1.0],   Lower:[-1.0, -8.0, -2.5] },
+  SP:  { Upper:[-2.0, 0.1, 2.0],    Lower:[-12.9, -0.5, 1.64] }
+};
+
+// ---- AI adoption rates (fixed) ----
+const AI_ADOPT = {
+  NB: { Upper:[0.335,0.512,0.601], Lower:[0.15,0.31,0.4] },
+  SP: { Upper:[0.4,0.5,0.6], Lower:[0.27,0.3,0.37] }
+};
+
+// ---- Memory content per unit (GB, 2026f-2028f, fixed) ----
+const DRAM_C = {
+  NB:[14.2992,15.300144,16.218153], DT:[14.387989,16.417365,18.766914],
+  Tablet:[6.627333,8.384580,10.464845], AI_NB:[32,64,64],
+  SP:[9.576,8.432,9.387403], AI_SP:[22,24,24],
+  SmartTV:[4.7,5.3,5.0], GameConsole:[13.4,14.2,15.1], Auto:[5.6,6.8,8.1]
+};
+const NAND_C = {
+  NB:[701,733,769.65], DT:[938,1017,1091], Tablet:[352,357,390],
+  AI_NB:[5120,5120,5120], SP:[228,237,253.884], AI_SP:[640,768,768],
+  GameConsole:[965,1034,1108], Auto:[99,122,152], eSSD:[639,716,801]
+};
+
+// ---- Fixed shipments (K units, 2026f-2028f) ----
+const FIX_SHIP = {
+  SmartTV:[192850,195658,191673], GameConsole:[38640,39765,40141],
+  Auto:[81370,86156,90146], eSSD:[98980,101863,102824]
+};
+
+// ---- Fixed demand components NOT affected by consumer GR ----
+const FIX_DRAM = {
+  Auto:[3645.376,4686.912,5841.444],
+  Industrial:[8412.406,10815.951,13480.255]
+};
+
+// ---- Server DRAM(ex-HBM) historical (M 1Gb eq. = K GB / 125), 2022-2025 ----
+const HIST_SVR = {
+  Traditional: [16894.08, 15552.30, 15864.23, 17434.88],
+  Hyperscaler: [33228.70, 34735.97, 37835.20, 53662.60],
+  AIServer:    [5022.40,  6066.74,  13249.66, 27186.67]
+};
+// Base 2025 — K units (shipments), 4 sub-types
+const SVR_SHIP_2025 = { Traditional:4112, HyperStd:12520, HyperDb:258, AIServer:1262 };
+// Fixed DRAM content per server unit (GB/unit), 2026f–2028f
+const SVR_CONTENT = {
+  Traditional:[560,        597.517,  650.539],
+  HyperStd:   [560,        599.693,  655.118],
+  HyperDb:    [1289.474,  1321.182, 1364.545],
+  AIServer:   [5910.964,  9238.595, 19195.452]
+};
+// Default shipment YoY GRs (%) — from Excel rows 29-32 shipment data
+const DEFAULT_SVR_GR = {
+  Traditional:[ 1.99,  2.00,  -0.04],
+  HyperStd:   [20.42,  8.93,  19.44],
+  HyperDb:    [ 3.10,  3.01,   3.65],
+  AIServer:   [-22.74, 17.85, 20.00]
+};
+// Historical K units for strip display (2022–2025)
+const HIST_SVR_SHIP = {
+  Traditional:[5028, 4217, 4283, 4112],
+  Hyperscaler:[9186, 9100, 9886, 12778],
+  AIServer:   [ 730,  783, 1608,  1262]
+};
+
+// ---- HBM forecast base (M 1Gb eq.) — Total HBM Demand of GPU/AI Accelerator, 2-1 sheet ----
+const HBM_BASE_FCST = [29967.67, 59034.29, 83145.86];
+const FIX_NAND = {
+  ServerSSD:[773.056,903.231,1281.716],
+  eSSD:[505.986,583.471,658.895],
+  Auto:[64.445,84.089,109.617],
+  Industrial:[104.104,135.836,177.074]
+};
+
+// ---- Supply (fixed, 2022-2028f = 7 values) ----
+const SUP = {
+  DRAM_Bits:[218310,211636.708,247858,289250,339846,387972,517067.305],
+  DRAM_Cap:[1753,1639,1452,1485,1517,1747,2050],
+  DDR_Yield_U:[10378,10760,14225,16232,18669,18507,21716],
+  DDR_Yield_L:[9859,10561,13265,14615,17668,19565,22560],
+  NAND_Bits:[5195.42,7055.97,5913.30,6948.68,8020.23,9490.75,11262.35],
+  NAND_Cap:[1770.5,1743,1699.5,1670.5,1699,1729,1829],
+  NAND_Yield:[327.85,335.11,399.35,499.52,570.94,666.57,770.05],
+  HBM_Bit_U:[720,3840,12640,24480,44080,61280,82000],
+  HBM_Bit_L:[720,3840,11870,24480,36266,61280,81272.3],
+  HBM_Cap_U:[68,87,280,395,477,690,790],
+  HBM_Cap_L:[20,85,205,361,465,603,702],
+  HBM_Yield_U:[882,3678,5138,5651,7701,8469,9734],
+  HBM_Yield_L:[667,3572,5195,5760,7153,7352,8774]
+};
+
+// ---- HBM demand (M 1Gb eq., fixed) ----
+const HBM_DEM = [0,73,1017,14843,29968,59034,83146];
+
+// ---- HBM demand by company ----
+const HBM_DEM_CO = {
+  NVIDIA:  [0,6.8,693.0,9511.9,19172.0,35343.4,48407.0],
+  AMD:     [0,9.6,128.8,1071.4,2083.8,7831.6,11698.2],
+  Google:  [0,14.4,24.1,1728.5,4832.5,8074.2,15191.0],
+  AWS:     [0,2.6,42.7,423.6,910.1,1446.9,3208.3],
+  Others:  [0,39.5,128.2,2108.0,2969.2,6338.2,4641.3]
+};
+
+// ---- Supply by supplier ----
+const SUP_DDR_BIT = {
+  Samsung:[98473.2,96107.0,104490.3,112574.3,130050.7,143345.1,159197.1],
+  'SK Hynix':[62641.4,63914.1,68065.7,80065.5,94933.6,109626.7,123344.4],
+  Micron:[50265.9,47208.5,60437.3,69061.5,80349.1,89877.7,170492.4],
+  NanyaTech:[4240.2,3056.7,3035.6,4663.8,5319.1,5711.5,7650.8],
+  CXMT:[1872.5,530.4,11049.9,22028.7,28344.3,38518.4,55613.2],
+  Other:[816.8,819.9,779.2,856.3,849.2,892.5,769.4]
+};
+const SUP_NAND_BIT = {
+  Samsung:[3128.43,1946.64,2373.38,2448.40,2747.59,3093.84,3412.09],
+  Kioxia:[1856.73,1876.41,1968.54,2237.27,2628.89,3079.04,3575.28],
+  'SK Hynix':[1116.04,1188.62,1135.69,1285.98,1512.88,1707.64,1866.48],
+  Micron:[619.28,780.15,853.73,1078.90,1282.36,1440.56,2022.32],
+  YMTC:[149.76,113.10,606.57,954.22,1295.66,1913.83,2736.10],
+  Others:[185.73,8.38,10.77,15.47,23.37,27.44,164.64]
+};
+const SUP_HBM_BIT_U = {
+  Samsung:[240,1600,4880,5280,14560,22400,28880],
+  'SK Hynix':[480,2160,6960,14240,21040,28720,37440],
+  Micron:[0,80,800,4960,8480,10160,15680]
+};
+
+// ---- Historical demand composition ----
+const HIST_DRAM_COMP = {
+  Server:[55145.2,56355.0,66949.1,98284.1],
+  PC:[24169.2,24056.4,28542.1,38265.2],
+  SP:[53300.8,62813.8,81841.1,87866.7],
+  TvGc:[8356.0,8768.0,9787.2,10892.0],
+  Auto:[1324.8,1728.0,2340.0,2970.4],
+  Industrial:[3057.2,3987.7,5400.0,6854.8]
+};
+const HIST_NAND_COMP = {
+  ServerSSD:[277.2,278.6,347.3,576.8],
+  Consumer:[3327.9,3708.0,4843.7,6300.6],
+  Auto:[21.0,27.6,39.0,50.6],
+  Industrial:[33.9,44.7,63.0,81.7]
+};
+
+// ---- Historical totals ----
+const HIST = {
+  DRAM_Total:[145353,157709,194860,245133],
+  DRAM_Server:[55145,56355,66949,98284],
+  DRAM_GPU:[5022,6067,13250,27187],
+  DRAM_3C:[85826,95638,120170,137024],
+  DRAM_Auto:[1325,1728,2340,2970],
+  DRAM_Indus:[3057,3988,5400,6855],
+  DRAM_BitBal_U:[77979,59807,64439,42913],
+  DRAM_BitBal_L:[72957,53928,52998,44117],
+  DRAM_CapBal_U:[585.8,417.6,310.5,226.5],
+  DRAM_CapBal_L:[524.4,394.6,227.8,87.3],
+  NAND_Total:[3660,4059,5293,7010],
+  NAND_SvrSSD:[277.2,278.6,347.3,576.8],
+  NAND_3C:[3328,3708,4844,6301],
+  NAND_eSSD:[282.5,248.8,323.2,448.4],
+  NAND_Auto:[21.0,27.6,39.0,50.6],
+  NAND_Indus:[33.9,44.7,63.0,81.7],
+  NAND_BitBal_U:[1535.4,2997.0,620.3,-60.9],
+  NAND_BitBal_L:[1535.4,2997.0,620.3,-60.9],
+  NAND_CapBal_U:[852.1,546.6,404.9,210.5],
+  NAND_CapBal_L:[852.1,546.6,404.9,210.5],
+  HBM_BitBal_U:[720,3767,11623,9637],
+  HBM_BitBal_L:[720,3767,10853,9637],
+  HBM_CapBal_U:[68,85.3,263.5,176.1],
+  HBM_CapBal_L:[20,83.3,188.7,146.2],
+  Ship_NB:[208100,182943,188580,200807],
+  Ship_DT:[85700,69163,66912,72529],
+  Ship_Tablet:[161600,128608,144576,148632],
+  Ship_SP:[1205900,1237481,1261678,1099543]
+};
+
+/* ================================================================
+   CALCULATION ENGINE
+   ================================================================ */
+let currentGR = JSON.parse(JSON.stringify(DEFAULT_GR));
+let currentSVR_GR = JSON.parse(JSON.stringify(DEFAULT_SVR_GR));
+let currentHBMMul = [1.0, 1.0, 1.0];
+let currentUnit = { hbm:'bit', dram:'bit', nand:'bit' };
+// Finished wafer over capacity (1-1_Supply_NAND), 2022–2028
+const NAND_UTIL = [1.0130, 0.8437, 0.8532, 0.8010, 0.8153, 0.8143, 0.8148];
+let currentSeg3 = 'dram', currentSeg4 = 'dram';
+let currentUnit3 = 'bit',  currentUnit4 = 'bit';
+
+function medianGR(device, yi) {
+  return (currentGR[device].Upper[yi] + currentGR[device].Lower[yi]) / 2;
+}
+
+function recalc() {
+  const R = { ships:{}, dram:{}, nand:{}, balance:{} };
+
+  // Step 1: Shipment forecasts — Upper/Lower run independently (no median cascade)
+  for (const d of ['NB','DT','Tablet','SP']) {
+    const base = BASE_2025[d];
+    R.ships[d] = { Upper:[], Lower:[], Median:[] };
+    let prevU = base, prevL = base;
+    for (let y=0; y<3; y++) {
+      const u = prevU * (1 + currentGR[d].Upper[y]/100);
+      const l = prevL * (1 + currentGR[d].Lower[y]/100);
+      R.ships[d].Upper.push(u);
+      R.ships[d].Lower.push(l);
+      R.ships[d].Median.push((u + l) / 2);
+      prevU = u;
+      prevL = l;
+    }
+  }
+
+  // Step 2: 3C DRAM demand (M 1Gb eq.)
+  const pc_U=[], pc_L=[], pc_M=[], sp_U=[], sp_L=[], sp_M=[], o3c=[];
+  // Detailed demand breakdown for composition charts
+  const dem_nb_M=[], dem_dt_M=[], dem_tab_M=[], dem_ainb_M=[], dem_sp_M=[], dem_aisp_M=[], dem_tv_M=[], dem_gc_M=[];
+  for (let y=0; y<3; y++) {
+    const aiAdoptMid_NB = (AI_ADOPT.NB.Upper[y]+AI_ADOPT.NB.Lower[y])/2;
+    const aiAdoptMid_SP = (AI_ADOPT.SP.Upper[y]+AI_ADOPT.SP.Lower[y])/2;
+
+    const nbU = R.ships.NB.Upper[y], nbL = R.ships.NB.Lower[y], nbM = R.ships.NB.Median[y];
+    const ainbU = nbU*AI_ADOPT.NB.Upper[y], ainbL = nbL*AI_ADOPT.NB.Lower[y], ainbM = nbM*aiAdoptMid_NB;
+    const nb_dU = (nbU-ainbU)*DRAM_C.NB[y]*8/1000;
+    const nb_dL = (nbL-ainbL)*DRAM_C.NB[y]*8/1000;
+    const nb_dM = (nbM-ainbM)*DRAM_C.NB[y]*8/1000;
+    const ainb_dU = ainbU*DRAM_C.AI_NB[y]*8/1000;
+    const ainb_dL = ainbL*DRAM_C.AI_NB[y]*8/1000;
+    const ainb_dM = ainbM*DRAM_C.AI_NB[y]*8/1000;
+
+    const dt_dU = R.ships.DT.Upper[y]*DRAM_C.DT[y]*8/1000;
+    const dt_dL = R.ships.DT.Lower[y]*DRAM_C.DT[y]*8/1000;
+    const dt_dM = R.ships.DT.Median[y]*DRAM_C.DT[y]*8/1000;
+
+    const tab_dU = R.ships.Tablet.Upper[y]*DRAM_C.Tablet[y]*8/1000;
+    const tab_dL = R.ships.Tablet.Lower[y]*DRAM_C.Tablet[y]*8/1000;
+    const tab_dM = R.ships.Tablet.Median[y]*DRAM_C.Tablet[y]*8/1000;
+
+    const spU = R.ships.SP.Upper[y], spL = R.ships.SP.Lower[y], spM = R.ships.SP.Median[y];
+    const aispU = spU*AI_ADOPT.SP.Upper[y], aispL = spL*AI_ADOPT.SP.Lower[y], aispM = spM*aiAdoptMid_SP;
+    const sp_dU_ = (spU-aispU)*DRAM_C.SP[y]*8/1000;
+    const sp_dL_ = (spL-aispL)*DRAM_C.SP[y]*8/1000;
+    const sp_dM_ = (spM-aispM)*DRAM_C.SP[y]*8/1000;
+    const aisp_dU = aispU*DRAM_C.AI_SP[y]*8/1000;
+    const aisp_dL = aispL*DRAM_C.AI_SP[y]*8/1000;
+    const aisp_dM = aispM*DRAM_C.AI_SP[y]*8/1000;
+
+    const tv_d = FIX_SHIP.SmartTV[y]*DRAM_C.SmartTV[y]*8/1000;
+    const gc_d = FIX_SHIP.GameConsole[y]*DRAM_C.GameConsole[y]*8/1000;
+
+    const pcU_y = nb_dU+dt_dU+tab_dU+ainb_dU;
+    const pcL_y = nb_dL+dt_dL+tab_dL+ainb_dL;
+    const spU_y = sp_dU_+aisp_dU;
+    const spL_y = sp_dL_+aisp_dL;
+    pc_U.push(pcU_y);
+    pc_L.push(pcL_y);
+    pc_M.push((pcU_y+pcL_y)/2);
+    sp_U.push(spU_y);
+    sp_L.push(spL_y);
+    sp_M.push((spU_y+spL_y)/2);
+    o3c.push(tv_d+gc_d);
+
+    // Detailed breakdown (median = avg of U/L)
+    dem_nb_M.push((nb_dU+nb_dL)/2); dem_dt_M.push((dt_dU+dt_dL)/2);
+    dem_tab_M.push((tab_dU+tab_dL)/2); dem_ainb_M.push((ainb_dU+ainb_dL)/2);
+    dem_sp_M.push((sp_dU_+sp_dL_)/2); dem_aisp_M.push((aisp_dU+aisp_dL)/2);
+    dem_tv_M.push(tv_d); dem_gc_M.push(gc_d);
+  }
+
+  // Step 3: NAND demand
+  const npc_U=[], npc_L=[], npc_M=[], nsp_U=[], nsp_L=[], nsp_M=[], no3c=[];
+  const ndem_nb_M=[], ndem_dt_M=[], ndem_tab_M=[], ndem_ainb_M=[], ndem_sp_M=[], ndem_aisp_M=[], ndem_gc_M=[];
+  for (let y=0; y<3; y++) {
+    const aiAdoptMid_NB = (AI_ADOPT.NB.Upper[y]+AI_ADOPT.NB.Lower[y])/2;
+    const aiAdoptMid_SP = (AI_ADOPT.SP.Upper[y]+AI_ADOPT.SP.Lower[y])/2;
+
+    const nbU=R.ships.NB.Upper[y], nbL=R.ships.NB.Lower[y], nbM=R.ships.NB.Median[y];
+    const ainbU=nbU*AI_ADOPT.NB.Upper[y], ainbL=nbL*AI_ADOPT.NB.Lower[y], ainbM=nbM*aiAdoptMid_NB;
+    const nb_nU=(nbU-ainbU)*NAND_C.NB[y]*8/1e6;
+    const nb_nL=(nbL-ainbL)*NAND_C.NB[y]*8/1e6;
+    const nb_nM=(nbM-ainbM)*NAND_C.NB[y]*8/1e6;
+    const ainb_nU=ainbU*NAND_C.AI_NB[y]*8/1e6;
+    const ainb_nL=ainbL*NAND_C.AI_NB[y]*8/1e6;
+    const ainb_nM=ainbM*NAND_C.AI_NB[y]*8/1e6;
+
+    const dt_nU=R.ships.DT.Upper[y]*NAND_C.DT[y]*8/1e6;
+    const dt_nL=R.ships.DT.Lower[y]*NAND_C.DT[y]*8/1e6;
+    const dt_nM=R.ships.DT.Median[y]*NAND_C.DT[y]*8/1e6;
+
+    const tab_nU=R.ships.Tablet.Upper[y]*NAND_C.Tablet[y]*8/1e6;
+    const tab_nL=R.ships.Tablet.Lower[y]*NAND_C.Tablet[y]*8/1e6;
+    const tab_nM=R.ships.Tablet.Median[y]*NAND_C.Tablet[y]*8/1e6;
+
+    const spU=R.ships.SP.Upper[y], spL=R.ships.SP.Lower[y], spM=R.ships.SP.Median[y];
+    const aispU=spU*AI_ADOPT.SP.Upper[y], aispL=spL*AI_ADOPT.SP.Lower[y], aispM=spM*aiAdoptMid_SP;
+    const sp_nU_=(spU-aispU)*NAND_C.SP[y]*8/1e6;
+    const sp_nL_=(spL-aispL)*NAND_C.SP[y]*8/1e6;
+    const sp_nM_=(spM-aispM)*NAND_C.SP[y]*8/1e6;
+    const aisp_nU=aispU*NAND_C.AI_SP[y]*8/1e6;
+    const aisp_nL=aispL*NAND_C.AI_SP[y]*8/1e6;
+    const aisp_nM=aispM*NAND_C.AI_SP[y]*8/1e6;
+
+    const gc_n=FIX_SHIP.GameConsole[y]*NAND_C.GameConsole[y]*8/1e6;
+
+    const npcU_y = nb_nU+dt_nU+tab_nU+ainb_nU;
+    const npcL_y = nb_nL+dt_nL+tab_nL+ainb_nL;
+    const nspU_y = sp_nU_+aisp_nU;
+    const nspL_y = sp_nL_+aisp_nL;
+    npc_U.push(npcU_y);
+    npc_L.push(npcL_y);
+    npc_M.push((npcU_y+npcL_y)/2);
+    nsp_U.push(nspU_y);
+    nsp_L.push(nspL_y);
+    nsp_M.push((nspU_y+nspL_y)/2);
+    no3c.push(gc_n);
+
+    ndem_nb_M.push((nb_nU+nb_nL)/2); ndem_dt_M.push((dt_nU+dt_nL)/2);
+    ndem_tab_M.push((tab_nU+tab_nL)/2); ndem_ainb_M.push((ainb_nU+ainb_nL)/2);
+    ndem_sp_M.push((sp_nU_+sp_nL_)/2); ndem_aisp_M.push((aisp_nU+aisp_nL)/2);
+    ndem_gc_M.push(gc_n);
+  }
+
+  // Server DRAM demand — K units × GB/unit / 125 = M 1Gb eq.
+  let prevTrad=SVR_SHIP_2025.Traditional, prevStd=SVR_SHIP_2025.HyperStd,
+      prevDb=SVR_SHIP_2025.HyperDb, prevAI=SVR_SHIP_2025.AIServer;
+  const svrTradShip=[],svrStdShip=[],svrDbShip=[],svrAIShip=[],svrHyperShip=[];
+  const svrTrad=[],svrHyperStd=[],svrHyperDb=[],svrHyper=[],svrAI=[];
+  for(let y=0;y<3;y++){
+    prevTrad=prevTrad*(1+currentSVR_GR.Traditional[y]/100);
+    prevStd =prevStd *(1+currentSVR_GR.HyperStd[y]/100);
+    prevDb  =prevDb  *(1+currentSVR_GR.HyperDb[y]/100);
+    prevAI  =prevAI  *(1+currentSVR_GR.AIServer[y]/100);
+    svrTradShip.push(prevTrad); svrStdShip.push(prevStd);
+    svrDbShip.push(prevDb); svrAIShip.push(prevAI);
+    svrHyperShip.push(prevStd+prevDb);
+    svrTrad.push(prevTrad*SVR_CONTENT.Traditional[y]/125);
+    svrHyperStd.push(prevStd*SVR_CONTENT.HyperStd[y]/125);
+    svrHyperDb.push(prevDb*SVR_CONTENT.HyperDb[y]/125);
+    svrHyper.push(prevStd*SVR_CONTENT.HyperStd[y]/125+prevDb*SVR_CONTENT.HyperDb[y]/125);
+    svrAI.push(prevAI*SVR_CONTENT.AIServer[y]/125);
+  }
+
+  // HBM demand — multiplier-driven for forecast, historical fixed
+  const hbmDemDyn = HBM_DEM.slice();
+  for (let y=0; y<3; y++) hbmDemDyn[4+y] = HBM_BASE_FCST[y] * currentHBMMul[y];
+
+  // Step 4: Total DRAM demand — Median = (Upper + Lower) / 2
+  const dramDem_U=[], dramDem_L=[], dramDem_M=[];
+  for (let y=0; y<3; y++) {
+    const svrM = svrTrad[y] + svrHyper[y] + svrAI[y];
+    const dU = svrM+pc_U[y]+sp_U[y]+o3c[y]+FIX_DRAM.Auto[y]+FIX_DRAM.Industrial[y];
+    const dL = svrM+pc_L[y]+sp_L[y]+o3c[y]+FIX_DRAM.Auto[y]+FIX_DRAM.Industrial[y];
+    dramDem_U.push(dU);
+    dramDem_L.push(dL);
+    dramDem_M.push((dU + dL) / 2);
+  }
+
+  // Step 5: Total NAND demand (incl eSSD) — Median = (Upper + Lower) / 2
+  const nandDem_U=[], nandDem_L=[], nandDem_M=[];
+  for (let y=0; y<3; y++) {
+    const nU = FIX_NAND.ServerSSD[y]+npc_U[y]+nsp_U[y]+no3c[y]+FIX_NAND.eSSD[y]+FIX_NAND.Auto[y]+FIX_NAND.Industrial[y];
+    const nL = FIX_NAND.ServerSSD[y]+npc_L[y]+nsp_L[y]+no3c[y]+FIX_NAND.eSSD[y]+FIX_NAND.Auto[y]+FIX_NAND.Industrial[y];
+    nandDem_U.push(nU);
+    nandDem_L.push(nL);
+    nandDem_M.push((nU + nL) / 2);
+  }
+
+  // Step 6: Build full 7-year arrays
+  R.sd = {
+    dram_dem_U:[], dram_dem_L:[], dram_dem_M:[],
+    dram_sup: SUP.DRAM_Bits.slice(),
+    nand_dem_U:[], nand_dem_L:[], nand_dem_M:[],
+    nand_sup: SUP.NAND_Bits.slice(),
+    hbm_dem: hbmDemDyn.slice(),
+    hbm_sup_U: SUP.HBM_Bit_U.slice(),
+    hbm_sup_L: SUP.HBM_Bit_L.slice(),
+    dram_dem_cap_U:[], dram_dem_cap_L:[], dram_dem_cap_M:[],
+    dram_sup_cap: SUP.DRAM_Cap.slice(),
+    nand_dem_cap_U:[], nand_dem_cap_L:[], nand_dem_cap_M:[],
+    nand_sup_cap: SUP.NAND_Cap.map((v,i)=>v*NAND_UTIL[i]),
+    hbm_dem_cap:[], hbm_sup_cap_U: SUP.HBM_Cap_U.slice(), hbm_sup_cap_L: SUP.HBM_Cap_L.slice()
+  };
+
+  R.balance = {
+    hbm_bit_U:[], hbm_bit_L:[], hbm_cap_U:[], hbm_cap_L:[],
+    dram_bit_U:[], dram_bit_L:[], dram_cap_U:[], dram_cap_L:[],
+    nand_bit_U:[], nand_bit_L:[], nand_cap_U:[], nand_cap_L:[]
+  };
+
+  for (let i=0; i<7; i++) {
+    if (i < 4) {
+      R.sd.dram_dem_U.push(HIST.DRAM_Total[i]);
+      R.sd.dram_dem_L.push(HIST.DRAM_Total[i]);
+      R.sd.dram_dem_M.push(HIST.DRAM_Total[i]);
+      R.sd.nand_dem_U.push(HIST.NAND_Total[i]);
+      R.sd.nand_dem_L.push(HIST.NAND_Total[i]);
+      R.sd.nand_dem_M.push(HIST.NAND_Total[i]);
+      const dkH = HIST.DRAM_Total[i]/((SUP.DDR_Yield_U[i]+SUP.DDR_Yield_L[i])/2)/12*1000;
+      R.sd.dram_dem_cap_U.push(dkH); R.sd.dram_dem_cap_L.push(dkH); R.sd.dram_dem_cap_M.push(dkH);
+      const nkH = HIST.NAND_Total[i]/SUP.NAND_Yield[i]/12*1000;
+      R.sd.nand_dem_cap_U.push(nkH); R.sd.nand_dem_cap_L.push(nkH); R.sd.nand_dem_cap_M.push(nkH);
+      R.sd.hbm_dem_cap.push(hbmDemDyn[i]/((SUP.HBM_Yield_U[i]+SUP.HBM_Yield_L[i])/2)/12*1000);
+      R.balance.hbm_bit_U.push(HIST.HBM_BitBal_U[i]); R.balance.hbm_bit_L.push(HIST.HBM_BitBal_L[i]);
+      R.balance.hbm_cap_U.push(HIST.HBM_CapBal_U[i]); R.balance.hbm_cap_L.push(HIST.HBM_CapBal_L[i]);
+      R.balance.dram_bit_U.push(HIST.DRAM_BitBal_U[i]); R.balance.dram_bit_L.push(HIST.DRAM_BitBal_L[i]);
+      R.balance.dram_cap_U.push(HIST.DRAM_CapBal_U[i]); R.balance.dram_cap_L.push(HIST.DRAM_CapBal_L[i]);
+      R.balance.nand_bit_U.push(HIST.NAND_BitBal_U[i]); R.balance.nand_bit_L.push(HIST.NAND_BitBal_L[i]);
+      R.balance.nand_cap_U.push(HIST.NAND_CapBal_U[i]); R.balance.nand_cap_L.push(HIST.NAND_CapBal_L[i]);
+    } else {
+      const fy = i - 4;
+      R.sd.dram_dem_U.push(dramDem_U[fy]); R.sd.dram_dem_L.push(dramDem_L[fy]); R.sd.dram_dem_M.push(dramDem_M[fy]);
+      R.sd.nand_dem_U.push(nandDem_U[fy]); R.sd.nand_dem_L.push(nandDem_L[fy]); R.sd.nand_dem_M.push(nandDem_M[fy]);
+      const dkU = dramDem_U[fy]/SUP.DDR_Yield_L[i]/12*1000;
+      const dkL = dramDem_L[fy]/SUP.DDR_Yield_U[i]/12*1000;
+      const dkM = dramDem_M[fy]/((SUP.DDR_Yield_U[i]+SUP.DDR_Yield_L[i])/2)/12*1000;
+      R.sd.dram_dem_cap_U.push(dkU); R.sd.dram_dem_cap_L.push(dkL); R.sd.dram_dem_cap_M.push(dkM);
+      const nkU = nandDem_U[fy]/SUP.NAND_Yield[i]/12*1000;
+      const nkL = nandDem_L[fy]/SUP.NAND_Yield[i]/12*1000;
+      const nkM = nandDem_M[fy]/SUP.NAND_Yield[i]/12*1000;
+      R.sd.nand_dem_cap_U.push(nkU); R.sd.nand_dem_cap_L.push(nkL); R.sd.nand_dem_cap_M.push(nkM);
+      R.sd.hbm_dem_cap.push(hbmDemDyn[i]/(SUP.HBM_Yield_U[i])/12*1000);
+      R.balance.hbm_bit_U.push(SUP.HBM_Bit_U[i] - hbmDemDyn[i]);
+      R.balance.hbm_bit_L.push(SUP.HBM_Bit_L[i] - hbmDemDyn[i]);
+      R.balance.hbm_cap_U.push(SUP.HBM_Cap_U[i] - hbmDemDyn[i]/(SUP.HBM_Yield_U[i])/12*1000);
+      R.balance.hbm_cap_L.push(SUP.HBM_Cap_L[i] - hbmDemDyn[i]/(SUP.HBM_Yield_L[i])/12*1000);
+      R.balance.dram_bit_U.push(SUP.DRAM_Bits[i] - dramDem_L[fy]);
+      R.balance.dram_bit_L.push(SUP.DRAM_Bits[i] - dramDem_U[fy]);
+      R.balance.dram_cap_U.push(SUP.DRAM_Cap[i] - dkL);
+      R.balance.dram_cap_L.push(SUP.DRAM_Cap[i] - dkU);
+      R.balance.nand_bit_U.push(SUP.NAND_Bits[i] - nandDem_L[fy]);
+      R.balance.nand_bit_L.push(SUP.NAND_Bits[i] - nandDem_U[fy]);
+      R.balance.nand_cap_U.push(SUP.NAND_Cap[i]*NAND_UTIL[i] - nkL);
+      R.balance.nand_cap_L.push(SUP.NAND_Cap[i]*NAND_UTIL[i] - nkU);
+    }
+  }
+
+  // Store component data for sections 3-5
+  R.components = {
+    pc_U, pc_L, pc_M, sp_U, sp_L, sp_M, o3c,
+    npc_U, npc_L, npc_M, nsp_U, nsp_L, nsp_M, no3c,
+    dramDem_U, dramDem_L, dramDem_M, nandDem_U, nandDem_L, nandDem_M,
+    svrTrad, svrHyperStd, svrHyperDb, svrHyper, svrAI,
+    svrTradShip, svrStdShip, svrDbShip, svrAIShip, svrHyperShip, hbmDemDyn,
+    // Detailed median breakdown
+    dem_nb_M, dem_dt_M, dem_tab_M, dem_ainb_M, dem_sp_M, dem_aisp_M, dem_tv_M, dem_gc_M,
+    ndem_nb_M, ndem_dt_M, ndem_tab_M, ndem_ainb_M, ndem_sp_M, ndem_aisp_M, ndem_gc_M
+  };
+  return R;
+}
+
+/* ================================================================
+   CHART HELPERS
+   ================================================================ */
+const chartInstances = {};
+
+function fmtNum(v, dec=0) {
+  if (v == null) return '—';
+  const abs = Math.abs(v);
+  if (abs >= 1e6) return (v/1e6).toFixed(1)+'M';
+  if (abs >= 1e3) return (v/1e3).toFixed(dec > 0 ? dec : 1)+'K';
+  return v.toFixed(dec);
+}
+
+const PALETTE = ['#4f7db5','#5fa07a','#c49830','#b84c4c','#4898a4','#8a62b0','#d07840','#7a909a'];
+
+function destroyChart(id) {
+  if (chartInstances[id]) { chartInstances[id].destroy(); delete chartInstances[id]; }
+}
+
+/* ================================================================
+   SECTION 2: VERDICT CHARTS
+   ================================================================ */
+function getBalanceData(R, seg, unit) {
+  const uk = unit === 'kwpm' ? 'cap' : unit;
+  return { upper: R.balance[seg+'_'+uk+'_U'], lower: R.balance[seg+'_'+uk+'_L'] };
+}
+
+function getSDData(R, seg, unit) {
+  const uk = unit === 'kwpm' ? 'cap' : unit;
+  if (seg === 'hbm') {
+    const demKey = uk === 'cap' ? 'hbm_dem_cap' : 'hbm_dem';
+    const supUKey = uk === 'cap' ? 'hbm_sup_cap_U' : 'hbm_sup_U';
+    const supLKey = uk === 'cap' ? 'hbm_sup_cap_L' : 'hbm_sup_L';
+    return {
+      dem_U: R.sd[demKey], dem_L: R.sd[demKey], dem_M: R.sd[demKey],
+      sup_U: R.sd[supUKey], sup_L: R.sd[supLKey],
+      sup_M: R.sd[supUKey].map((u,i) => (u + R.sd[supLKey][i]) / 2)
+    };
+  }
+  const dkU=seg+'_dem_'+(uk==='cap'?'cap':'')+'_U', dkL=seg+'_dem_'+(uk==='cap'?'cap':'')+'_L', dkM=seg+'_dem_'+(uk==='cap'?'cap':'')+'_M';
+  const sk = seg + '_sup' + (uk === 'cap' ? '_cap' : '');
+  const supArr = R.sd[sk] || R.sd[seg+'_sup'];
+  return {
+    dem_U: R.sd[seg+'_dem_'+uk+'_U'] || R.sd[seg+'_dem_U'],
+    dem_L: R.sd[seg+'_dem_'+uk+'_L'] || R.sd[seg+'_dem_L'],
+    dem_M: R.sd[seg+'_dem_'+uk+'_M'] || R.sd[seg+'_dem_M'],
+    sup_U: supArr, sup_L: supArr, sup_M: supArr
+  };
+}
+
+function buildVerdictChart(canvasId, seg, R, unit) {
+  const ctx = document.getElementById(canvasId);
+  destroyChart(canvasId);
+
+  const bd = getBalanceData(R, seg, unit);
+  const bal_U = bd.upper, bal_L = bd.lower;
+  const sd = getSDData(R, seg, unit);
+
+  const unitLabel = unit === 'bit' ? (seg === 'nand' ? 'mn 1Tb eq.' : 'M 1Gb eq.') : 'kwpm';
+  const isHBM = seg === 'hbm';
+  const datasets = [];
+
+  // --- Balance: compound anchored bars (Option A) ---
+  // Layer 1 (back): range band split by zero — green above, red below
+  // For straddle (bal_L<0 < bal_U): two half-bars meet at zero
+  const rangeGreenData = YEARS.map((_,i) => bal_U[i]>0 ? [Math.max(0,bal_L[i]), bal_U[i]] : [0,0]);
+  const rangeRedData   = YEARS.map((_,i) => bal_L[i]<0 ? [bal_L[i], Math.min(0,bal_U[i])]  : [0,0]);
+
+  // Layer 2 (front): confirmed anchor bar from zero
+  const baseData = YEARS.map((_, i) => {
+    if (bal_L[i] >= 0) return [0, bal_L[i]];
+    if (bal_U[i] < 0)  return [bal_U[i], 0];
+    return [0, 0];
+  });
+  const baseBg = YEARS.map((_, i) => {
+    if (bal_L[i] >= 0) return 'rgba(5,150,105,0.75)';
+    if (bal_U[i] < 0)  return 'rgba(220,38,38,0.75)';
+    return 'transparent';
+  });
+
+  datasets.push({
+    type:'bar',label:'Balance Range',data:rangeGreenData,yAxisID:'yBal',
+    backgroundColor:'rgba(5,150,105,0.22)',borderWidth:0,borderRadius:0,barPercentage:0.56,order:5
+  });
+  datasets.push({
+    type:'bar',label:'_range_red',data:rangeRedData,yAxisID:'yBal',
+    backgroundColor:'rgba(220,38,38,0.22)',borderWidth:0,borderRadius:0,barPercentage:0.56,order:5
+  });
+  datasets.push({
+    type:'bar',label:'_base',data:baseData,yAxisID:'yBal',
+    backgroundColor:baseBg,borderWidth:0,borderRadius:0,barPercentage:0.56,order:4
+  });
+
+  if (isHBM) {
+    datasets.push({
+      type:'line',label:'Supply (Upper)',data:sd.sup_U,yAxisID:'ySD',
+      borderColor:'rgba(37,99,235,0.35)',backgroundColor:'rgba(37,99,235,0.08)',
+      fill:'+2',borderWidth:1,pointRadius:0,tension:0.3,order:3
+    });
+    // Visible median line for legend
+    datasets.push({
+      type:'line',label:'Supply',data:sd.sup_M,yAxisID:'ySD',
+      borderColor:'rgba(37,99,235,0.8)',backgroundColor:'transparent',
+      fill:false,borderWidth:2,pointRadius:0,tension:0.3,order:2
+    });
+    datasets.push({
+      type:'line',label:'Supply (Lower)',data:sd.sup_L,yAxisID:'ySD',
+      borderColor:'rgba(37,99,235,0.35)',backgroundColor:'transparent',
+      fill:false,borderWidth:1,pointRadius:0,tension:0.3,order:3
+    });
+  } else {
+    datasets.push({
+      type:'line',label:'Supply',data:sd.sup_M,yAxisID:'ySD',
+      borderColor:'rgba(37,99,235,0.9)',backgroundColor:'transparent',
+      fill:false,borderWidth:2,pointRadius:0,tension:0.3,order:2
+    });
+  }
+
+  datasets.push({
+    type:'line',label:'Demand (Upper)',data:sd.dem_U,yAxisID:'ySD',
+    borderColor:'rgba(109,40,217,0.38)',backgroundColor:'rgba(109,40,217,0.07)',
+    fill:'+1',borderWidth:1.2,pointRadius:0,tension:0.3,order:1
+  });
+  datasets.push({
+    type:'line',label:'Demand (Lower)',data:sd.dem_L,yAxisID:'ySD',
+    borderColor:'rgba(109,40,217,0.28)',backgroundColor:'transparent',
+    fill:false,borderWidth:1,pointRadius:0,tension:0.3,order:1
+  });
+  datasets.push({
+    type:'line',label:'Demand (Median)',data:sd.dem_M,yAxisID:'ySD',
+    borderColor:'#7c3aed',borderWidth:2,
+    pointRadius:0,fill:false,tension:0.3,order:0
+  });
+
+  chartInstances[canvasId] = new Chart(ctx, {
+    type:'bar',data:{labels:YEARS,datasets},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      datasets:{ bar:{ grouped:false } },
+      plugins:{
+        legend:{display:true,position:'bottom',labels:{boxWidth:12,font:{size:9},padding:8,
+          filter:(item)=>!item.text.includes('Upper')&&!item.text.includes('Lower')&&!item.text.startsWith('_')}},
+        tooltip:{backgroundColor:'rgba(30,58,95,0.92)',titleFont:{size:11},bodyFont:{size:11},
+          filter:(item)=>!item.dataset.label.startsWith('_'),
+          callbacks:{label:(c)=>{
+            if(c.dataset.label==='Balance Range'){
+              const i=c.dataIndex;
+              return `Balance: [${fmtNum(bal_L[i])}, ${fmtNum(bal_U[i])}] ${unitLabel}`;
+            }
+            if(Array.isArray(c.raw)) return `${c.dataset.label}: [${fmtNum(c.raw[0])}, ${fmtNum(c.raw[1])}] ${unitLabel}`;
+            return `${c.dataset.label}: ${fmtNum(c.parsed.y)} ${unitLabel}`;
+          }}}
+      },
+      scales:{
+        x:{grid:{display:false},ticks:{font:{size:10}}},
+        ySD:{type:'linear',position:'left',grid:{color:'rgba(0,0,0,0.04)'},
+          ticks:{font:{size:9},callback:v=>fmtNum(v)},
+          title:{display:true,text:'Supply / Demand ('+unitLabel+')',font:{size:9,weight:'600'}}},
+        yBal:{type:'linear',position:'right',grid:{drawOnChartArea:false},
+          ticks:{font:{size:9},callback:v=>fmtNum(v)},
+          title:{display:true,text:'Balance',font:{size:9,weight:'600'}}}
+      }
+    },
+    plugins:[{
+      id:'zeroLine',afterDraw(chart){
+        const yBal=chart.scales.yBal;const zero=yBal.getPixelForValue(0);
+        if(zero>=yBal.top&&zero<=yBal.bottom){
+          const c=chart.ctx;c.save();c.beginPath();
+          c.moveTo(chart.chartArea.left,zero);c.lineTo(chart.chartArea.right,zero);
+          c.strokeStyle='#94a3b8';c.lineWidth=1;c.setLineDash([3,3]);c.stroke();c.restore();
+        }
+      }
+    }]
+  });
+}
+
+function updateVerdictMeta(R) {
+  const segs=['hbm','dram','nand'];
+  for (let s=0; s<3; s++) {
+    const seg=segs[s];
+    const unit=currentUnit[seg];
+    const bd=getBalanceData(R,seg,unit);
+    const unitLabel=unit==='kwpm'?'kwpm':(seg==='nand'?'mn 1Tb':'M 1Gb');
+    const bal27_mid=(bd.upper[5]+bd.lower[5])/2;
+    const bal28_mid=(bd.upper[6]+bd.lower[6])/2;
+    let shortageYr=null;
+    for (let i=3;i<7;i++){if(bd.lower[i]<0){shortageYr=YEARS[i];break;}}
+    const tagEl=document.getElementById('tag-'+seg);
+    const metricEl=document.getElementById('metric-'+seg);
+    if(bd.lower[4]<0&&bd.upper[4]<0){tagEl.className='tag shortage';tagEl.innerHTML='<span class="dot red"></span>Deficit in 2026';}
+    else if(bd.lower[4]<0){tagEl.className='tag neutral';tagEl.innerHTML='<span class="dot yellow"></span>Risk in 2026';}
+    else{tagEl.className='tag surplus';tagEl.innerHTML='<span class="dot green"></span>Surplus in 2026';}
+    let metricText=`2027f: <b>${fmtNum(bal27_mid)}</b> ${unitLabel} &middot; 2028f: <b>${fmtNum(bal28_mid)}</b>`;
+    if(shortageYr) metricText+=` &middot; Shortage from <b>${shortageYr}</b>`;
+    metricEl.innerHTML=metricText;
+  }
+}
+
+function switchUnit(seg,unit) {
+  currentUnit[seg]=unit;
+  document.querySelectorAll(`#toggle-${seg} button`).forEach(b=>{b.classList.toggle('active',b.dataset.unit===unit);});
+  const R=recalc();
+  buildVerdictChart('chart-'+seg,seg,R,unit);
+  updateVerdictMeta(R);
+}
+
+/* ================================================================
+   SECTION 3: DEMAND/SUPPLY COMPOSITION STACKED BARS (Absolute)
+   ================================================================ */
+
+/* Scale an array of 7-year bit series to kwpm using per-year ratios */
+function scaleComp(series, ratios) {
+  return series.map(s => s.map((v, i) => ratios[i] > 0 ? v * ratios[i] : 0));
+}
+
+/* kwpm/bit ratio for demand, per segment, all 7 years */
+function demRatios(seg, R) {
+  return YEARS.map((_, i) => {
+    let kwpm, bits;
+    if (seg === 'dram' || seg === 'dram_total') {
+      kwpm = i < 4
+        ? SUP.DRAM_Cap[i] - (HIST.DRAM_CapBal_U[i] + HIST.DRAM_CapBal_L[i]) / 2
+        : R.sd.dram_dem_cap_M[i];
+      bits = R.sd.dram_dem_M[i];
+    } else if (seg === 'nand') {
+      kwpm = i < 4
+        ? SUP.NAND_Cap[i] * NAND_UTIL[i] - (HIST.NAND_CapBal_U[i] + HIST.NAND_CapBal_L[i]) / 2
+        : R.sd.nand_dem_cap_M[i];
+      bits = R.sd.nand_dem_M[i];
+    } else { // hbm
+      kwpm = i < 4
+        ? ((SUP.HBM_Cap_U[i] - HIST.HBM_CapBal_U[i]) + (SUP.HBM_Cap_L[i] - HIST.HBM_CapBal_L[i])) / 2
+        : R.sd.hbm_dem_cap[i];
+      bits = R.sd.hbm_dem[i];
+    }
+    return bits > 0 ? kwpm / bits : 0;
+  });
+}
+
+/* kwpm/bit ratio for supply, per segment, all 7 years (no R needed) */
+function supRatios(seg) {
+  return YEARS.map((_, i) => {
+    let kwpm, bits;
+    if (seg === 'dram') {
+      kwpm = SUP.DRAM_Cap[i]; bits = SUP.DRAM_Bits[i];
+    } else if (seg === 'dram_total') {
+      kwpm = SUP.DRAM_Cap[i] + (SUP.HBM_Cap_U[i] + SUP.HBM_Cap_L[i]) / 2;
+      bits = SUP.DRAM_Bits[i] + (SUP.HBM_Bit_U[i] + SUP.HBM_Bit_L[i]) / 2;
+    } else if (seg === 'nand') {
+      kwpm = SUP.NAND_Cap[i] * NAND_UTIL[i]; bits = SUP.NAND_Bits[i];
+    } else { // hbm
+      kwpm = (SUP.HBM_Cap_U[i] + SUP.HBM_Cap_L[i]) / 2;
+      bits = (SUP.HBM_Bit_U[i] + SUP.HBM_Bit_L[i]) / 2;
+    }
+    return bits > 0 ? kwpm / bits : 0;
+  });
+}
+
+function getDemCompData(seg, R, unit) {
+  const c = R.components;
+  const dr = unit === 'kwpm' ? demRatios(seg, R) : null;
+  // For dram_total: DRAM components use DRAM ratios, HBM component uses HBM ratios
+  const hbmDr = (unit === 'kwpm' && seg === 'dram_total') ? demRatios('hbm', R) : null;
+  const applyR = (series, ratioArr) => unit === 'kwpm' ? scaleComp(series, ratioArr) : series;
+
+  if (seg === 'dram') {
+    const tradM  = HIST_SVR.Traditional.concat(c.svrTrad);
+    const hyperM = HIST_SVR.Hyperscaler.concat(c.svrHyper);
+    const aiM    = HIST_SVR.AIServer.concat(c.svrAI);
+    const pcM    = HIST_DRAM_COMP.PC.concat(c.pc_M);
+    const spM    = HIST_DRAM_COMP.SP.concat(c.sp_M);
+    const tvgcM  = HIST_DRAM_COMP.TvGc.concat(c.o3c);
+    const autoM  = HIST_DRAM_COMP.Auto.concat(FIX_DRAM.Auto.slice());
+    const indusM = HIST_DRAM_COMP.Industrial.concat(FIX_DRAM.Industrial.slice());
+    return {
+      labels: ['Trad. Server','Hyperscaler','AI Server','PC','Smartphone','TV/Console','Auto','Industrial'],
+      colors: ['#3a6ea5','#5b8fc9','#8ab4e0','#5fa07a','#8a62b0','#c49830','#b84c4c','#4898a4'],
+      series: applyR([tradM, hyperM, aiM, pcM, spM, tvgcM, autoM, indusM], dr)
+    };
+  } else if (seg === 'dram_total') {
+    const tradM  = HIST_SVR.Traditional.concat(c.svrTrad);
+    const hyperM = HIST_SVR.Hyperscaler.concat(c.svrHyper);
+    const aiM    = HIST_SVR.AIServer.concat(c.svrAI);
+    const pcM    = HIST_DRAM_COMP.PC.concat(c.pc_M);
+    const spM    = HIST_DRAM_COMP.SP.concat(c.sp_M);
+    const tvgcM  = HIST_DRAM_COMP.TvGc.concat(c.o3c);
+    const autoM  = HIST_DRAM_COMP.Auto.concat(FIX_DRAM.Auto.slice());
+    const indusM = HIST_DRAM_COMP.Industrial.concat(FIX_DRAM.Industrial.slice());
+    const hbmTot = c.hbmDemDyn.slice();
+    // DRAM components use DRAM ratio; HBM component uses HBM ratio
+    const dramScaled = applyR([tradM, hyperM, aiM, pcM, spM, tvgcM, autoM, indusM], dr);
+    const hbmScaled  = unit === 'kwpm' ? scaleComp([hbmTot], hbmDr) : [hbmTot];
+    return {
+      labels: ['Trad. Server','Hyperscaler','AI Server','PC','Smartphone','TV/Console','Auto','Industrial','GPU/AI Accel (HBM)'],
+      colors: ['#3a6ea5','#5b8fc9','#8ab4e0','#5fa07a','#8a62b0','#c49830','#b84c4c','#4898a4','#d07840'],
+      series: [...dramScaled, ...hbmScaled]
+    };
+  } else if (seg === 'nand') {
+    const svrM   = HIST_NAND_COMP.ServerSSD.concat(FIX_NAND.ServerSSD.slice());
+    const consM  = HIST_NAND_COMP.Consumer.concat(c.nandDem_M.map((_,y)=>c.npc_M[y]+c.nsp_M[y]+c.no3c[y]+FIX_NAND.eSSD[y]));
+    const autoM  = HIST_NAND_COMP.Auto.concat(FIX_NAND.Auto.slice());
+    const indusM = HIST_NAND_COMP.Industrial.concat(FIX_NAND.Industrial.slice());
+    return {
+      labels: ['Server SSD','Consumer 3C','Auto','Industrial'],
+      colors: ['#4f7db5','#5fa07a','#b84c4c','#4898a4'],
+      series: applyR([svrM, consM, autoM, indusM], dr)
+    };
+  } else { // hbm / GPU-AI
+    const keys = Object.keys(HBM_DEM_CO);
+    const scaledCo = keys.map(k =>
+      HBM_DEM_CO[k].map((v, i) => i < 4 ? v : v * currentHBMMul[i-4])
+    );
+    return {
+      labels: keys,
+      colors: ['#4f7db5','#b84c4c','#5fa07a','#c49830','#7a909a'],
+      series: applyR(scaledCo, dr)
+    };
+  }
+}
+
+function getSupCompData(seg, unit) {
+  const sr = unit === 'kwpm' ? supRatios(seg) : null;
+  const applyR = (series) => unit === 'kwpm' ? scaleComp(series, sr) : series;
+  if (seg === 'dram') {
+    const keys = Object.keys(SUP_DDR_BIT);
+    return {
+      labels: keys, colors: ['#4f7db5','#8a62b0','#5fa07a','#c49830','#b84c4c','#7a909a'],
+      series: applyR(keys.map(k => SUP_DDR_BIT[k].slice()))
+    };
+  } else if (seg === 'dram_total') {
+    const addArr = (a, b) => a.map((v,i) => v + (b[i]||0));
+    return {
+      labels: ['Samsung','SK Hynix','Micron','NanyaTech','CXMT','Other'],
+      colors: ['#4f7db5','#8a62b0','#5fa07a','#c49830','#b84c4c','#7a909a'],
+      series: applyR([
+        addArr(SUP_DDR_BIT.Samsung,      SUP_HBM_BIT_U.Samsung),
+        addArr(SUP_DDR_BIT['SK Hynix'],  SUP_HBM_BIT_U['SK Hynix']),
+        addArr(SUP_DDR_BIT.Micron,       SUP_HBM_BIT_U.Micron),
+        SUP_DDR_BIT.NanyaTech.slice(),
+        SUP_DDR_BIT.CXMT.slice(),
+        SUP_DDR_BIT.Other.slice()
+      ])
+    };
+  } else if (seg === 'nand') {
+    const keys = Object.keys(SUP_NAND_BIT);
+    return {
+      labels: keys, colors: ['#4f7db5','#4898a4','#8a62b0','#5fa07a','#b84c4c','#c49830','#7a909a'],
+      series: applyR(keys.map(k => SUP_NAND_BIT[k].slice()))
+    };
+  } else { // hbm
+    const keys = Object.keys(SUP_HBM_BIT_U);
+    return {
+      labels: keys, colors: ['#4f7db5','#8a62b0','#5fa07a'],
+      series: applyR(keys.map(k => SUP_HBM_BIT_U[k].slice()))
+    };
+  }
+}
+
+function buildStackedBar(canvasId, data, unitLabel) {
+  destroyChart(canvasId);
+  const ctx = document.getElementById(canvasId);
+  const datasets = data.labels.map((lbl, i) => ({
+    label: lbl, data: data.series[i],
+    backgroundColor: data.colors[i] + '99',
+    borderColor: data.colors[i] + 'bb',
+    borderWidth: 1, borderRadius: 2
+  }));
+  chartInstances[canvasId] = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: YEARS, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { boxWidth: 10, font: { size: 9 }, padding: 6 } },
+        tooltip: { backgroundColor: 'rgba(30,58,95,0.92)', bodyFont: { size: 10 },
+          callbacks: { label: c => `${c.dataset.label}: ${fmtNum(c.parsed.y)} ${unitLabel}` } }
+      },
+      scales: {
+        x: { stacked: true, grid: { display: false }, ticks: { font: { size: 10 } } },
+        y: { stacked: true, grid: { color: 'rgba(0,0,0,0.04)' },
+          ticks: { font: { size: 9 }, callback: v => fmtNum(v) },
+          title: { display: true, text: unitLabel, font: { size: 9, weight: '600' } }
+        }
+      }
+    }
+  });
+}
+
+function renderSection3(R) {
+  const seg = currentSeg3, unit = currentUnit3;
+  const unitLabel = unit === 'kwpm' ? 'kwpm' : (seg === 'nand' ? 'mn 1Tb eq.' : 'M 1Gb eq.');
+  buildStackedBar('chart-dem-comp', getDemCompData(seg, R, unit), unitLabel);
+  buildStackedBar('chart-sup-comp', getSupCompData(seg, unit), unitLabel);
+}
+
+function switchSeg3(seg) {
+  currentSeg3 = seg;
+  document.querySelectorAll('#seg3-toggle button').forEach(b => b.classList.toggle('active', b.dataset.seg === seg));
+  renderSection3(recalc());
+}
+
+function switchUnit3(unit) {
+  currentUnit3 = unit;
+  document.querySelectorAll('#unit3-toggle button').forEach(b => b.classList.toggle('active', b.dataset.unit === unit));
+  renderSection3(recalc());
+}
+
+/* ================================================================
+   SECTION 4: 100% PERCENTAGE STACKED BARS
+   ================================================================ */
+function toPct(data) {
+  // Convert absolute stacked data to percentage
+  const n = data.series[0].length;
+  const pctSeries = data.series.map(s => new Array(n).fill(0));
+  for (let j = 0; j < n; j++) {
+    let total = 0;
+    for (let i = 0; i < data.series.length; i++) total += (data.series[i][j] || 0);
+    if (total === 0) continue;
+    for (let i = 0; i < data.series.length; i++) pctSeries[i][j] = (data.series[i][j] / total) * 100;
+  }
+  return { labels: data.labels, colors: data.colors, series: pctSeries };
+}
+
+function buildPctStackedBar(canvasId, data) {
+  destroyChart(canvasId);
+  const ctx = document.getElementById(canvasId);
+  const datasets = data.labels.map((lbl, i) => ({
+    label: lbl, data: data.series[i],
+    backgroundColor: data.colors[i] + '99', borderColor: data.colors[i] + 'bb',
+    borderWidth: 1, borderRadius: 2
+  }));
+  chartInstances[canvasId] = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: YEARS, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { boxWidth: 10, font: { size: 9 }, padding: 6 } },
+        tooltip: { backgroundColor: 'rgba(30,58,95,0.92)', bodyFont: { size: 10 },
+          callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y.toFixed(1)}%` } }
+      },
+      scales: {
+        x: { stacked: true, grid: { display: false }, ticks: { font: { size: 10 } } },
+        y: { stacked: true, max: 100, grid: { color: 'rgba(0,0,0,0.04)' },
+          ticks: { font: { size: 9 }, callback: v => v + '%' },
+          title: { display: true, text: 'Share (%)', font: { size: 9, weight: '600' } }
+        }
+      }
+    }
+  });
+}
+
+function renderSection4(R) {
+  const seg = currentSeg4, unit = currentUnit4;
+  buildPctStackedBar('chart-dem-pct', toPct(getDemCompData(seg, R, unit)));
+  buildPctStackedBar('chart-sup-pct', toPct(getSupCompData(seg, unit)));
+}
+
+function switchSeg4(seg) {
+  currentSeg4 = seg;
+  document.querySelectorAll('#seg4-toggle button').forEach(b => b.classList.toggle('active', b.dataset.seg === seg));
+  renderSection4(recalc());
+}
+
+function switchUnit4(unit) {
+  currentUnit4 = unit;
+  document.querySelectorAll('#unit4-toggle button').forEach(b => b.classList.toggle('active', b.dataset.unit === unit));
+  renderSection4(recalc());
+}
+
+/* ================================================================
+   DEVICE STRIP + FLOATING PANEL
+   ================================================================ */
+const DEVICES = [
+  { key:'NB', name:'Notebook', shortName:'NB', type:'consumer',
+    icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.5" width="19" height="12.5" rx="1.5"/><rect x="4" y="5" width="16" height="9.5" rx="0.5" stroke-opacity="0.55"/><path d="M1 17.5h22"/><path d="M9.5 19.5h5" stroke-width="1.5"/></svg>' },
+  { key:'DT', name:'Desktop', shortName:'DT', type:'consumer',
+    icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="14" rx="1.5"/><rect x="3.5" y="3.5" width="17" height="10.5" rx="0.5" stroke-opacity="0.55"/><circle cx="12" cy="15.2" r="0.5" fill="currentColor" stroke="none"/><line x1="12" y1="16" x2="12" y2="20"/><path d="M8 20 Q12 21.2 16 20"/></svg>' },
+  { key:'Tablet', name:'Tablet', shortName:'Tab', type:'consumer',
+    icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="1" width="15" height="22" rx="2"/><rect x="6" y="3.5" width="12" height="16.5" rx="0.5" stroke-opacity="0.55"/><rect x="9.5" y="2" width="5" height="1" rx="0.5" fill="currentColor" stroke="none"/><circle cx="12" cy="21.3" r="0.75" fill="currentColor" stroke="none"/></svg>' },
+  { key:'SP', name:'Smartphone', shortName:'SP', type:'consumer',
+    icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6.5" y="1" width="11" height="22" rx="2.8"/><rect x="8" y="4" width="8" height="15.5" rx="0.5" stroke-opacity="0.55"/><rect x="9.8" y="2.1" width="4.4" height="1.4" rx="0.7" fill="currentColor" stroke="none"/><line x1="9.5" y1="21.2" x2="14.5" y2="21.2" stroke-width="1.5"/></svg>' },
+  { key:'Traditional', name:'Trad. Server', shortName:'TradSvr', type:'server',
+    icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><rect x="2" y="10" width="20" height="5" rx="1"/><rect x="2" y="17" width="20" height="4" rx="1"/><circle cx="18.5" cy="5.5" r="1" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12.5" r="1" fill="currentColor" stroke="none"/></svg>' },
+  { key:'Hyperscaler', name:'Hyperscaler', shortName:'HyperSvr', type:'server',
+    icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="4" rx="1"/><rect x="2" y="8" width="20" height="4" rx="1"/><rect x="2" y="14" width="20" height="4" rx="1"/><rect x="2" y="20" width="20" height="2" rx="1"/><line x1="19" y1="4" x2="21" y2="4" stroke-width="1.5"/><line x1="19" y1="10" x2="21" y2="10" stroke-width="1.5"/></svg>' },
+  { key:'AIServer', name:'AI Server', shortName:'AISvr', type:'server',
+    icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M8 12h8M12 8v8" stroke-width="1.5"/><circle cx="12" cy="12" r="2.5"/></svg>' },
+  { key:'GPUAI', name:'GPU/AI (HBM)', shortName:'GPU/AI', type:'gpuai',
+    icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="6" y="8" width="5" height="5" rx="0.5" stroke-opacity="0.7"/><rect x="13" y="8" width="5" height="5" rx="0.5" stroke-opacity="0.7"/><path d="M7 17v2M12 17v2M17 17v2M7 5V3M12 5V3M17 5V3"/></svg>' }
+];
+
+let currentDevicePanel = null;
+let lastR = null; // cache last render result for panel summary
+
+function getDeviceContrib(R, devKey) {
+  const c = R.components;
+  if (devKey === 'NB')     return { dram: c.dem_nb_M[0] + c.dem_ainb_M[0], nand: c.ndem_nb_M[0] + c.ndem_ainb_M[0] };
+  if (devKey === 'DT')     return { dram: c.dem_dt_M[0],                    nand: c.ndem_dt_M[0] };
+  if (devKey === 'Tablet') return { dram: c.dem_tab_M[0],                   nand: c.ndem_tab_M[0] };
+  return                          { dram: c.dem_sp_M[0] + c.dem_aisp_M[0], nand: c.ndem_sp_M[0] + c.ndem_aisp_M[0] };
+}
+
+function renderDeviceStrip(R) {
+  const inner = document.getElementById('deviceStripInner');
+  inner.innerHTML = '';
+  // Divider between consumer and server sections
+  let addedDivider = false;
+  for (const dev of DEVICES) {
+    // Insert visual separator before first server card
+    if ((dev.type === 'server' || dev.type === 'gpuai') && !addedDivider) {
+      const div = document.createElement('div');
+      div.style.cssText = 'width:1px;background:rgba(255,255,255,0.2);align-self:stretch;flex-shrink:0;margin:4px 2px';
+      inner.appendChild(div);
+      addedDivider = true;
+    }
+    const card = document.createElement('div');
+    card.className = 'dsc' + (currentDevicePanel === dev.key ? ' active' : '');
+    card.id = 'dsc-' + dev.key;
+    card.onclick = () => openDevicePanel(dev.key);
+
+    if (dev.type === 'consumer') {
+      const ship26 = R.ships[dev.key].Median[0];
+      const ship25 = BASE_2025[dev.key];
+      const yoy = ((ship26 / ship25) - 1) * 100;
+      card.innerHTML = `
+        <div class="ds-icon">${dev.icon}</div>
+        <div class="ds-info">
+          <div class="ds-name ds-fullname">${dev.name}</div>
+          <div class="ds-shortname">${dev.shortName}</div>
+          <div class="ds-ship">${fmtNum(ship26/1000,1)}M</div>
+          <div class="ds-yoy ${yoy>=0?'up':'down'}">${yoy>=0?'+':''}${yoy.toFixed(1)}% YoY</div>
+        </div>`;
+    } else if (dev.type === 'server') {
+      const shipArr = { Traditional: R.components.svrTradShip, Hyperscaler: R.components.svrHyperShip, AIServer: R.components.svrAIShip };
+      const ship26 = shipArr[dev.key][0];
+      const ship25 = HIST_SVR_SHIP[dev.key][3];
+      const yoy = ((ship26 / ship25) - 1) * 100;
+      card.innerHTML = `
+        <div class="ds-icon">${dev.icon}</div>
+        <div class="ds-info">
+          <div class="ds-name ds-fullname">${dev.name}</div>
+          <div class="ds-shortname">${dev.shortName}</div>
+          <div class="ds-ship">${fmtNum(ship26,0)}K</div>
+          <div class="ds-yoy ${yoy>=0?'up':'down'}">${yoy>=0?'+':''}${yoy.toFixed(1)}% YoY</div>
+        </div>`;
+    } else { // gpuai
+      const hbm26 = R.sd.hbm_dem[4];
+      const hbm25 = R.sd.hbm_dem[3];
+      const yoy = ((hbm26 / hbm25) - 1) * 100;
+      card.innerHTML = `
+        <div class="ds-icon">${dev.icon}</div>
+        <div class="ds-info">
+          <div class="ds-name ds-fullname">${dev.name}</div>
+          <div class="ds-shortname">${dev.shortName}</div>
+          <div class="ds-ship">${fmtNum(hbm26,0)}</div>
+          <div class="ds-yoy ${yoy>=0?'up':'down'}">${yoy>=0?'+':''}${yoy.toFixed(1)}% YoY</div>
+        </div>`;
+    }
+    inner.appendChild(card);
+  }
+}
+
+function openDevicePanel(devKey) {
+  currentDevicePanel = devKey;
+  const dev = DEVICES.find(d => d.key === devKey);
+
+  // Header
+  document.getElementById('dpIcon').innerHTML = dev.icon;
+
+  // Highlight active card
+  document.querySelectorAll('.dsc').forEach(c => c.classList.toggle('active', c.id === 'dsc-'+devKey));
+
+  const container = document.getElementById('dpSliders');
+  const presetsRow = document.getElementById('dpPresets');
+  container.innerHTML = '';
+  const yearLabels = ['2026f','2027f','2028f'];
+
+  if (dev.type === 'consumer') {
+    document.getElementById('dpTitle').textContent = dev.name + ' Growth Rates';
+    presetsRow.style.display = '';
+    for (let y = 0; y < 3; y++) {
+      const midVal = medianGR(devKey, y);
+      const row = document.createElement('div');
+      row.className = 'ctrl-row';
+      row.innerHTML = `
+        <label>${yearLabels[y]}</label>
+        <input type="range" min="-30" max="15" step="0.5" value="${midVal.toFixed(1)}"
+               oninput="onSlider('${devKey}',${y},this.value)">
+        <span class="ctrl-val" id="val-${devKey}-${y}">${midVal.toFixed(1)}%</span>`;
+      container.appendChild(row);
+    }
+    if (lastR) {
+      const upper26 = lastR.ships[devKey].Upper[0];
+      const lower26 = lastR.ships[devKey].Lower[0];
+      const ship26  = lastR.ships[devKey].Median[0];
+      const contrib = getDeviceContrib(lastR, devKey);
+      document.getElementById('dpSummary').innerHTML =
+        `<b>2026f Shipment (median):</b> ${fmtNum(ship26/1000,1)}M<br>` +
+        `<b>Range:</b> ${fmtNum(lower26/1000,1)}M – ${fmtNum(upper26/1000,1)}M<br>` +
+        `<b>DRAM pull:</b> ${fmtNum(contrib.dram)} M&thinsp;1Gb eq.<br>` +
+        `<b>NAND pull:</b> ${fmtNum(contrib.nand,1)} mn&thinsp;1Tb eq.`;
+    }
+
+  } else if (dev.type === 'server') {
+    document.getElementById('dpTitle').textContent = dev.name + ' Shipment YoY';
+    presetsRow.style.display = 'none';
+    if (devKey === 'Hyperscaler') {
+      // Two sub-sections: Standard and Database in one panel
+      const subSections = [
+        { label:'Standard Server', key:'HyperStd', range:[-30,60,1] },
+        { label:'Database Server', key:'HyperDb',  range:[-10,20,0.5] }
+      ];
+      for (const sub of subSections) {
+        const sec = document.createElement('div');
+        sec.className = 'ctrl-section-label';
+        sec.textContent = sub.label;
+        container.appendChild(sec);
+        const [mn,mx,st] = sub.range;
+        for (let y=0;y<3;y++) {
+          const val = currentSVR_GR[sub.key][y];
+          const row = document.createElement('div');
+          row.className = 'ctrl-row';
+          row.innerHTML = `
+            <label>${yearLabels[y]}</label>
+            <input type="range" min="${mn}" max="${mx}" step="${st}" value="${val.toFixed(1)}"
+                   oninput="onSvrSlider('${sub.key}',${y},this.value)">
+            <span class="ctrl-val" id="val-svr-${sub.key}-${y}">${val.toFixed(1)}%</span>`;
+          container.appendChild(row);
+        }
+      }
+      if (lastR) {
+        const dem = lastR.components.svrHyper;
+        const ship = lastR.components.svrHyperShip;
+        document.getElementById('dpSummary').innerHTML =
+          `<b>2026f Shipment:</b> ${fmtNum(ship[0],0)}K (Std+DB)<br>` +
+          `<b>DRAM demand:</b> ${fmtNum(dem[0])} M&thinsp;1Gb eq.<br>` +
+          `<b>2027f:</b> ${fmtNum(dem[1])}&ensp;<b>2028f:</b> ${fmtNum(dem[2])}`;
+      }
+    } else {
+      const ranges = { Traditional:[-20,30,0.5], AIServer:[-50,200,5] };
+      const [mn, mx, st] = ranges[devKey];
+      for (let y = 0; y < 3; y++) {
+        const val = currentSVR_GR[devKey][y];
+        const row = document.createElement('div');
+        row.className = 'ctrl-row';
+        row.innerHTML = `
+          <label>${yearLabels[y]}</label>
+          <input type="range" min="${mn}" max="${mx}" step="${st}" value="${val.toFixed(1)}"
+                 oninput="onSvrSlider('${devKey}',${y},this.value)">
+          <span class="ctrl-val" id="val-svr-${devKey}-${y}">${val.toFixed(1)}%</span>`;
+        container.appendChild(row);
+      }
+      if (lastR) {
+        const shipArr = { Traditional: lastR.components.svrTradShip, AIServer: lastR.components.svrAIShip };
+        const demArr  = { Traditional: lastR.components.svrTrad,     AIServer: lastR.components.svrAI };
+        const ship = shipArr[devKey]; const dem = demArr[devKey];
+        document.getElementById('dpSummary').innerHTML =
+          `<b>2026f Shipment:</b> ${fmtNum(ship[0],0)}K<br>` +
+          `<b>DRAM demand:</b> ${fmtNum(dem[0])} M&thinsp;1Gb eq.<br>` +
+          `<b>2027f:</b> ${fmtNum(dem[1])}&ensp;<b>2028f:</b> ${fmtNum(dem[2])}`;
+      }
+    }
+
+  } else { // gpuai
+    document.getElementById('dpTitle').textContent = 'GPU/AI HBM Multiplier';
+    presetsRow.style.display = 'none';
+    for (let y = 0; y < 3; y++) {
+      const val = currentHBMMul[y];
+      const row = document.createElement('div');
+      row.className = 'ctrl-row';
+      row.innerHTML = `
+        <label>${yearLabels[y]}</label>
+        <input type="range" min="0.1" max="3" step="0.05" value="${val.toFixed(2)}"
+               oninput="onHBMSlider(${y},this.value)">
+        <span class="ctrl-val" id="val-hbm-${y}">&times;${val.toFixed(2)}</span>`;
+      container.appendChild(row);
+    }
+    if (lastR) {
+      document.getElementById('dpSummary').innerHTML =
+        `<b>Base (Excel):</b> ${fmtNum(HBM_BASE_FCST[0])} / ${fmtNum(HBM_BASE_FCST[1])} / ${fmtNum(HBM_BASE_FCST[2])} M&thinsp;1Gb eq.<br>` +
+        `<b>2026f (scaled):</b> ${fmtNum(lastR.sd.hbm_dem[4])}<br>` +
+        `<b>2027f:</b> ${fmtNum(lastR.sd.hbm_dem[5])}&ensp;<b>2028f:</b> ${fmtNum(lastR.sd.hbm_dem[6])}`;
+    }
+  }
+
+  document.getElementById('devicePanel').classList.add('open');
+  document.getElementById('dpOverlay').classList.add('open');
+}
+
+function closeDevicePanel() {
+  currentDevicePanel = null;
+  document.getElementById('devicePanel').classList.remove('open');
+  document.getElementById('dpOverlay').classList.remove('open');
+  document.querySelectorAll('.dsc').forEach(c => c.classList.remove('active'));
+}
+
+function onSlider(dev, y, val) {
+  const v = parseFloat(val);
+  const oldSpread = (DEFAULT_GR[dev].Upper[y] - DEFAULT_GR[dev].Lower[y]) / 2;
+  currentGR[dev].Upper[y] = v + oldSpread;
+  currentGR[dev].Lower[y] = v - oldSpread;
+  const el = document.getElementById(`val-${dev}-${y}`);
+  if (el) el.textContent = v.toFixed(1) + '%';
+  renderAll();
+}
+
+function onSvrSlider(devKey, y, val) {
+  currentSVR_GR[devKey][y] = parseFloat(val);
+  const el = document.getElementById(`val-svr-${devKey}-${y}`);
+  if (el) el.textContent = parseFloat(val).toFixed(1) + '%';
+  renderAll();
+}
+
+function scrollStrip(dir) {
+  const inner = document.getElementById('deviceStripInner');
+  inner.scrollBy({ left: dir * 220, behavior: 'smooth' });
+}
+
+function onHBMSlider(y, val) {
+  currentHBMMul[y] = parseFloat(val);
+  const el = document.getElementById(`val-hbm-${y}`);
+  if (el) el.textContent = '\u00d7' + parseFloat(val).toFixed(2);
+  renderAll();
+}
+
+function applyDevicePreset(preset) {
+  const d = currentDevicePanel;
+  if (!d) return;
+  const dev = DEVICES.find(x => x.key === d);
+  if (!dev || dev.type !== 'consumer') {
+    // Server / GPU/AI: only reset
+    if (dev && dev.type === 'server') {
+      if (d === 'Hyperscaler') {
+        currentSVR_GR.HyperStd = [...DEFAULT_SVR_GR.HyperStd];
+        currentSVR_GR.HyperDb  = [...DEFAULT_SVR_GR.HyperDb];
+      } else {
+        currentSVR_GR[d] = [...DEFAULT_SVR_GR[d]];
+      }
+    } else if (dev && dev.type === 'gpuai') {
+      currentHBMMul = [1.0, 1.0, 1.0];
+    }
+    renderAll();
+    openDevicePanel(d);
+    return;
+  }
+  // Consumer device presets
+  currentGR[d] = JSON.parse(JSON.stringify(DEFAULT_GR[d]));
+  if (preset === 'bull') {
+    for (let y=0;y<3;y++) { currentGR[d].Upper[y] += 3; currentGR[d].Lower[y] += 3; }
+  } else if (preset === 'bear') {
+    for (let y=0;y<3;y++) { currentGR[d].Upper[y] -= 5; currentGR[d].Lower[y] -= 5; }
+  } else if (preset === 'tariff') {
+    currentGR[d].Upper[0] -= 8; currentGR[d].Lower[0] -= 8;
+    currentGR[d].Upper[1] += 2; currentGR[d].Lower[1] += 2;
+  }
+  renderAll();
+  openDevicePanel(d);
+}
+
+/* ================================================================
+   MASTER RENDER
+   ================================================================ */
+function renderAll() {
+  const R = recalc();
+  lastR = R;
+  buildVerdictChart('chart-hbm','hbm',R,currentUnit.hbm);
+  buildVerdictChart('chart-dram','dram',R,currentUnit.dram);
+  buildVerdictChart('chart-nand','nand',R,currentUnit.nand);
+  updateVerdictMeta(R);
+  renderSection3(R);
+  renderSection4(R);
+  renderDeviceStrip(R);
+  // Refresh panel summary if open
+  if (currentDevicePanel) {
+    const dev = DEVICES.find(x => x.key === currentDevicePanel);
+    const el = document.getElementById('dpSummary');
+    if (el && dev) {
+      if (dev.type === 'consumer') {
+        const contrib = getDeviceContrib(R, currentDevicePanel);
+        const upper26 = R.ships[currentDevicePanel].Upper[0];
+        const lower26 = R.ships[currentDevicePanel].Lower[0];
+        const ship26  = R.ships[currentDevicePanel].Median[0];
+        el.innerHTML =
+          `<b>2026f Shipment (median):</b> ${fmtNum(ship26/1000,1)}M<br>` +
+          `<b>Range:</b> ${fmtNum(lower26/1000,1)}M – ${fmtNum(upper26/1000,1)}M<br>` +
+          `<b>DRAM pull:</b> ${fmtNum(contrib.dram)} M&thinsp;1Gb eq.<br>` +
+          `<b>NAND pull:</b> ${fmtNum(contrib.nand,1)} mn&thinsp;1Tb eq.`;
+      } else if (dev.type === 'server') {
+        if (currentDevicePanel === 'Hyperscaler') {
+          const dem = R.components.svrHyper; const ship = R.components.svrHyperShip;
+          el.innerHTML =
+            `<b>2026f Shipment:</b> ${fmtNum(ship[0],0)}K (Std+DB)<br>` +
+            `<b>DRAM demand:</b> ${fmtNum(dem[0])} M&thinsp;1Gb eq.<br>` +
+            `<b>2027f:</b> ${fmtNum(dem[1])}&ensp;<b>2028f:</b> ${fmtNum(dem[2])}`;
+        } else {
+          const shipArr = { Traditional: R.components.svrTradShip, AIServer: R.components.svrAIShip };
+          const demArr  = { Traditional: R.components.svrTrad,     AIServer: R.components.svrAI };
+          const ship = shipArr[currentDevicePanel]; const dem = demArr[currentDevicePanel];
+          el.innerHTML =
+            `<b>2026f Shipment:</b> ${fmtNum(ship[0],0)}K<br>` +
+            `<b>DRAM demand:</b> ${fmtNum(dem[0])} M&thinsp;1Gb eq.<br>` +
+            `<b>2027f:</b> ${fmtNum(dem[1])}&ensp;<b>2028f:</b> ${fmtNum(dem[2])}`;
+        }
+      } else { // gpuai
+        el.innerHTML =
+          `<b>2026f (scaled):</b> ${fmtNum(R.sd.hbm_dem[4])} M&thinsp;1Gb eq.<br>` +
+          `<b>2027f:</b> ${fmtNum(R.sd.hbm_dem[5])}&ensp;<b>2028f:</b> ${fmtNum(R.sd.hbm_dem[6])}`;
+      }
+    }
+  }
+  return R;
+}
+
+document.addEventListener('DOMContentLoaded', () => { renderAll(); });
+
+window.addEventListener('scroll', () => {
+  const header = document.querySelector('.header');
+  if (window.scrollY > 40) {
+    header.classList.add('compact');
+  } else {
+    header.classList.remove('compact');
+  }
+});
+</script>
+</body>
+</html>
