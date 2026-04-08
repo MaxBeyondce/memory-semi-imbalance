@@ -99,6 +99,16 @@ section{margin-bottom:32px}
   font-size:0.72rem;font-weight:600;color:var(--gray);transition:all .15s;white-space:nowrap;
 }
 .seg-toggle button.active{background:var(--navy);color:#fff}
+.seg-select{
+  display:none;
+  padding:5px 10px;border:1px solid #e2e8f0;border-radius:8px;
+  background:#fff;color:var(--navy);font-size:0.75rem;font-weight:600;
+  cursor:pointer;outline:none;min-width:160px;
+}
+@media(max-width:480px){
+  .seg-toggle{display:none}
+  .seg-select{display:block}
+}
 .comp-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
 @media(max-width:900px){.comp-grid{grid-template-columns:1fr}}
 .comp-card{padding:24px}
@@ -290,6 +300,12 @@ section{margin-bottom:32px}
         <button data-seg="dram_total" onclick="switchSeg3('dram_total')">Total DRAM</button>
         <button data-seg="nand" onclick="switchSeg3('nand')">NAND</button>
       </div>
+      <select class="seg-select" id="seg3-select" onchange="switchSeg3(this.value)">
+        <option value="hbm">GPU/AI Accel (HBM)</option>
+        <option value="dram" selected>DRAM (ex-HBM)</option>
+        <option value="dram_total">Total DRAM</option>
+        <option value="nand">NAND</option>
+      </select>
     </div>
   </div>
   <div class="comp-grid">
@@ -319,6 +335,12 @@ section{margin-bottom:32px}
         <button data-seg="dram_total" onclick="switchSeg4('dram_total')">Total DRAM</button>
         <button data-seg="nand" onclick="switchSeg4('nand')">NAND</button>
       </div>
+      <select class="seg-select" id="seg4-select" onchange="switchSeg4(this.value)">
+        <option value="hbm">GPU/AI Accel (HBM)</option>
+        <option value="dram" selected>DRAM (ex-HBM)</option>
+        <option value="dram_total">Total DRAM</option>
+        <option value="nand">NAND</option>
+      </select>
     </div>
   </div>
   <div class="comp-grid">
@@ -1216,6 +1238,7 @@ function renderSection3(R) {
 function switchSeg3(seg) {
   currentSeg3 = seg;
   document.querySelectorAll('#seg3-toggle button').forEach(b => b.classList.toggle('active', b.dataset.seg === seg));
+  const sel = document.getElementById('seg3-select'); if (sel) sel.value = seg;
   renderSection3(recalc());
 }
 
@@ -1279,6 +1302,7 @@ function renderSection4(R) {
 function switchSeg4(seg) {
   currentSeg4 = seg;
   document.querySelectorAll('#seg4-toggle button').forEach(b => b.classList.toggle('active', b.dataset.seg === seg));
+  const sel = document.getElementById('seg4-select'); if (sel) sel.value = seg;
   renderSection4(recalc());
 }
 
